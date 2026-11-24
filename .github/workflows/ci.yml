@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  database:
+    name: Postgres with pgvector starts
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: triage
+          POSTGRES_PASSWORD: triage
+          POSTGRES_DB: triage
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U triage" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply init script and check the vector type works
+        env:
+          PGPASSWORD: triage
+        run: |
+          psql -h localhost -U triage -d triage -v ON_ERROR_STOP=1 -f infra/db/init.sql
+          psql -h localhost -U triage -d triage -v ON_ERROR_STOP=1 -c "SELECT '[1,2,3]'::vector <-> '[1,2,4]'::vector AS distance;"
